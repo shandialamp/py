@@ -116,15 +116,8 @@ func TestUpdate(t *testing.T) {
 		Set("age", 20).
 		Where(Eq("id", 1)).
 		Build()
-
-	// map 遍历顺序不确定，只验证包含关键部分
-	if sql != "UPDATE users SET name = ?, age = ? WHERE (id = ?)" &&
-		sql != "UPDATE users SET age = ?, name = ? WHERE (id = ?)" {
-		t.Errorf("Unexpected SQL: %s", sql)
-	}
-	if len(args) != 3 {
-		t.Errorf("Expected 3 args, got %d: %v", len(args), args)
-	}
+	assertSQL(t, "UPDATE users SET name = ?, age = ? WHERE (id = ?)",
+		[]any{"Alice", 20, 1}, sql, args)
 }
 
 func TestDelete(t *testing.T) {
@@ -248,6 +241,42 @@ func TestComment(t *testing.T) {
 func TestCrossJoin(t *testing.T) {
 	sql, args := Table("users").CrossJoin("orders").Build()
 	assertSQL(t, "SELECT * FROM users CROSS JOIN orders", nil, sql, args)
+}
+
+func TestInsertSet(t *testing.T) {
+	// Insert().Set() 风格
+	sql, args := Insert("users").
+		Set("name", "Alice").
+		Set("age", 18).
+		Build()
+	assertSQL(t, "INSERT INTO users (name, age) VALUES (?, ?)", []any{"Alice", 18}, sql, args)
+}
+
+func TestInsertColumnsValues(t *testing.T) {
+	// InsertInto().Columns().Values() 风格
+	sql, args := InsertInto("users").
+		Columns("name", "email").
+		Values("Alice", "alice@test.com").
+		Values("Bob", "bob@test.com").
+		Build()
+	assertSQL(t, "INSERT INTO users (name, email) VALUES (?, ?), (?, ?)",
+		[]any{"Alice", "alice@test.com", "Bob", "bob@test.com"}, sql, args)
+}
+
+func TestInsertSelect(t *testing.T) {
+	// INSERT ... SELECT
+	sql, args := InsertInto("users", "name", "email").
+		SubQuery(
+			Table("temp_users").Select("name", "email").Where(Eq("status", 1)),
+		).
+		Build()
+	assertSQL(t, "INSERT INTO users (name, email) SELECT name, email FROM temp_users WHERE (status = ?)",
+		[]any{1}, sql, args)
+}
+
+func TestDeleteShort(t *testing.T) {
+	sql, args := Delete("users").Where(Eq("id", 1)).Build()
+	assertSQL(t, "DELETE FROM users WHERE (id = ?)", []any{1}, sql, args)
 }
 
 func TestChainExample(t *testing.T) {

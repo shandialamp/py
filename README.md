@@ -237,6 +237,10 @@ py.Table("users").
 
 ### INSERT
 
+三种风格可选：
+
+**风格一：`InsertInto` + `Values`（批量插入）**
+
 ```go
 py.InsertInto("users", "name", "email", "age").
     Values("Alice", "alice@example.com", 18).
@@ -244,6 +248,41 @@ py.InsertInto("users", "name", "email", "age").
     Build()
 // INSERT INTO users (name, email, age) VALUES (?, ?, ?), (?, ?, ?)
 // [Alice alice@example.com 18 Bob bob@example.com 20]
+```
+
+**风格二：`Insert` + `Set`（单行，字段顺序固定）**
+
+```go
+py.Insert("users").
+    Set("name", "Alice").
+    Set("age", 18).
+    Build()
+// INSERT INTO users (name, age) VALUES (?, ?)
+// [Alice 18]
+```
+
+**风格三：`InsertInto` + `Columns` + `Values`（批量，列名与值分离）**
+
+```go
+py.InsertInto("users").
+    Columns("name", "email").
+    Values("Alice", "alice@test.com").
+    Values("Bob", "bob@test.com").
+    Build()
+// INSERT INTO users (name, email) VALUES (?, ?), (?, ?)
+// [Alice alice@test.com Bob bob@test.com]
+```
+
+**INSERT ... SELECT**
+
+```go
+py.InsertInto("users", "name", "email").
+    SubQuery(
+        py.Table("temp_users").Select("name", "email").Where(py.Eq("status", 1)),
+    ).
+    Build()
+// INSERT INTO users (name, email) SELECT name, email FROM temp_users WHERE (status = ?)
+// [1]
 ```
 
 ### UPDATE
@@ -258,10 +297,18 @@ py.Update("users").
 // [Alice 20 1]
 ```
 
+`Set` 按调用顺序生成，字段顺序固定。
+
 ### DELETE
 
 ```go
+// 完整写法
 py.DeleteFrom("users").Where(py.Eq("id", 1)).Build()
+// DELETE FROM users WHERE (id = ?)
+// [1]
+
+// 简写
+py.Delete("users").Where(py.Eq("id", 1)).Build()
 // DELETE FROM users WHERE (id = ?)
 // [1]
 ```
@@ -298,9 +345,11 @@ sql, args := py.Table("users u").
 | 函数 | 说明 |
 |------|------|
 | `Table(name)` | SELECT 查询入口 |
-| `InsertInto(table, cols...)` | INSERT 入口 |
+| `InsertInto(table, cols...)` | INSERT 入口（指定列名） |
+| `Insert(table)` | INSERT 入口（配合 `Set` 使用） |
 | `Update(table)` | UPDATE 入口 |
 | `DeleteFrom(table)` | DELETE 入口 |
+| `Delete(table)` | DELETE 简写 |
 
 ### QueryBuilder 方法
 
@@ -318,8 +367,10 @@ sql, args := py.Table("users u").
 | `OrderBy(field, dir...)` | ORDER BY |
 | `Limit(n)` | LIMIT |
 | `Offset(n)` | OFFSET |
-| `Set(col, val)` | UPDATE SET |
-| `Values(vals...)` | INSERT VALUES |
+| `Set(col, val)` | UPDATE / INSERT 设置字段值 |
+| `Columns(cols...)` | INSERT 指定列名 |
+| `Values(vals...)` | INSERT 多行值 |
+| `SubQuery(qb)` | INSERT ... SELECT 子查询 |
 | `Comment(text)` | SQL 注释 |
 | `Count / Sum / Avg / Max / Min` | 聚合函数 |
 | `Build()` | 生成 SQL 和参数 |

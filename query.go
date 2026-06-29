@@ -20,10 +20,20 @@ type QueryBuilder struct {
 	distinct   bool
 	comment    string
 
-	// insert/update
+	// insert
 	insertCols []string
 	insertVals [][]any
-	setMap     map[string]any
+
+	// update — 用有序切片替代 map，保证 SET 列顺序
+	setCols []setPair
+
+	// insert from select
+	selectQuery *QueryBuilder
+}
+
+type setPair struct {
+	col string
+	val any
 }
 
 type orderClause struct {
@@ -64,13 +74,29 @@ func (q *QueryBuilder) Distinct() *QueryBuilder {
 	return q
 }
 
-// InsertInto 设置为 INSERT 语句
+// InsertInto 设置为 INSERT 语句，指定列名
+//   py.InsertInto("users", "name", "email").Values("Alice", "alice@test.com")
 func InsertInto(table string, cols ...string) *QueryBuilder {
 	return &QueryBuilder{
 		sqlType:    SqlTypeInsert,
 		table:      table,
 		insertCols: cols,
 	}
+}
+
+// Insert 设置为 INSERT 语句，不指定列名（通过 Set 逐列添加）
+//   py.Insert("users").Set("name", "Alice").Set("age", 18)
+func Insert(table string) *QueryBuilder {
+	return &QueryBuilder{
+		sqlType: SqlTypeInsert,
+		table:   table,
+	}
+}
+
+// Columns 设置 INSERT 的列名（与 Values 搭配使用）
+func (q *QueryBuilder) Columns(cols ...string) *QueryBuilder {
+	q.insertCols = append(q.insertCols, cols...)
+	return q
 }
 
 // Values 设置 INSERT 的值
@@ -81,26 +107,47 @@ func (q *QueryBuilder) Values(vals ...any) *QueryBuilder {
 	return q
 }
 
+// SubQuery 用于 INSERT ... SELECT 子查询
+//   py.InsertInto("users", "name", "email").SubQuery(
+//       py.Table("temp_users").Select("name", "email").Where(py.Eq("status", 1)),
+//   )
+func (q *QueryBuilder) SubQuery(subQuery *QueryBuilder) *QueryBuilder {
+	q.selectQuery = subQuery
+	return q
+}
+
 // Update 设置为 UPDATE 语句
+//   py.Update("users").Set("name", "Alice").Set("age", 20).Where(py.Eq("id", 1))
 func Update(table string) *QueryBuilder {
 	return &QueryBuilder{
 		sqlType: SqlTypeUpdate,
 		table:   table,
-		setMap:  make(map[string]any),
 	}
 }
 
-// Set 设置 UPDATE 的字段值
+// Set 设置 UPDATE 或 INSERT 的字段值
+// UPDATE: py.Update("users").Set("name", "Alice").Set("age", 20)
+// INSERT: py.Insert("users").Set("name", "Alice").Set("age", 18)
 func (q *QueryBuilder) Set(col string, val any) *QueryBuilder {
-	if q.setMap == nil {
-		q.setMap = make(map[string]any)
+	if q.sqlType == SqlTypeInsert {
+		q.insertCols = append(q.insertCols, col)
 	}
-	q.setMap[col] = val
+	q.setCols = append(q.setCols, setPair{col: col, val: val})
 	return q
 }
 
 // DeleteFrom 设置为 DELETE 语句
+//   py.DeleteFrom("users").Where(py.Eq("id", 1))
 func DeleteFrom(table string) *QueryBuilder {
+	return &QueryBuilder{
+		sqlType: SqlTypeDelete,
+		table:   table,
+	}
+}
+
+// Delete 设置为 DELETE 语句（简写）
+//   py.Delete("users").Where(py.Eq("id", 1))
+func Delete(table string) *QueryBuilder {
 	return &QueryBuilder{
 		sqlType: SqlTypeDelete,
 		table:   table,
@@ -353,10 +400,6 @@ func (q *QueryBuilder) buildSelect() (string, []any) {
 }
 
 func (q *QueryBuilder) buildInsert() (string, []any) {
-	if len(q.insertCols) == 0 || len(q.insertVals) == 0 {
-		return "", nil
-	}
-
 	var b strings.Builder
 	var args []any
 
@@ -365,6 +408,34 @@ func (q *QueryBuilder) buildInsert() (string, []any) {
 	}
 
 	b.WriteString(fmt.Sprintf("INSERT INTO %s", q.table))
+
+	// INSERT ... SELECT
+	if q.selectQuery != nil {
+		selectSQL, selectArgs := q.selectQuery.Build()
+		if len(q.insertCols) > 0 {
+			b.WriteString(fmt.Sprintf(" (%s)", strings.Join(q.insertCols, ", ")))
+		}
+		b.WriteString(fmt.Sprintf(" %s", selectSQL))
+		args = append(args, selectArgs...)
+		return b.String(), args
+	}
+
+	// 通过 Set() 收集的单行插入: Insert("t").Set("a",1).Set("b",2)
+	if len(q.insertVals) == 0 && len(q.setCols) > 0 {
+		var cols []string
+		var vals []any
+		for _, p := range q.setCols {
+			cols = append(cols, p.col)
+			vals = append(vals, p.val)
+		}
+		q.insertCols = cols
+		q.insertVals = [][]any{vals}
+	}
+
+	if len(q.insertCols) == 0 || len(q.insertVals) == 0 {
+		return "", nil
+	}
+
 	b.WriteString(fmt.Sprintf(" (%s)", strings.Join(q.insertCols, ", ")))
 
 	var rows []string
@@ -378,7 +449,7 @@ func (q *QueryBuilder) buildInsert() (string, []any) {
 }
 
 func (q *QueryBuilder) buildUpdate() (string, []any) {
-	if len(q.setMap) == 0 {
+	if len(q.setCols) == 0 {
 		return "", nil
 	}
 
@@ -392,9 +463,9 @@ func (q *QueryBuilder) buildUpdate() (string, []any) {
 	b.WriteString(fmt.Sprintf("UPDATE %s", q.table))
 
 	var sets []string
-	for col, val := range q.setMap {
-		sets = append(sets, fmt.Sprintf("%s = ?", col))
-		args = append(args, val)
+	for _, p := range q.setCols {
+		sets = append(sets, fmt.Sprintf("%s = ?", p.col))
+		args = append(args, p.val)
 	}
 	b.WriteString(fmt.Sprintf(" SET %s", strings.Join(sets, ", ")))
 

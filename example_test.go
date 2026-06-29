@@ -376,3 +376,70 @@ func ExampleTable_multi_join() {
 	// SELECT u.name, o.id as order_id, p.name as product_name FROM users u INNER JOIN orders o ON u.id = o.user_id INNER JOIN order_items oi ON o.id = oi.order_id INNER JOIN products p ON oi.product_id = p.id WHERE (u.status = ?) LIMIT 10
 	// [1]
 }
+
+// Example 26: INSERT ... Set 风格
+func ExampleInsert() {
+	sql, args := Insert("users").
+		Set("name", "Alice").
+		Set("age", 18).
+		Build()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// INSERT INTO users (name, age) VALUES (?, ?)
+	// [Alice 18]
+}
+
+// Example 27: INSERT ... Columns + Values 风格
+func ExampleInsert_columns_values() {
+	sql, args := InsertInto("users").
+		Columns("name", "email").
+		Values("Alice", "alice@test.com").
+		Values("Bob", "bob@test.com").
+		Build()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// INSERT INTO users (name, email) VALUES (?, ?), (?, ?)
+	// [Alice alice@test.com Bob bob@test.com]
+}
+
+// Example 28: INSERT ... SELECT
+func ExampleInsert_select() {
+	sql, args := InsertInto("users", "name", "email").
+		SubQuery(
+			Table("temp_users").Select("name", "email").Where(Eq("status", 1)),
+		).
+		Build()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// INSERT INTO users (name, email) SELECT name, email FROM temp_users WHERE (status = ?)
+	// [1]
+}
+
+// Example 29: DELETE 简写
+func ExampleDelete() {
+	sql, args := Delete("users").Where(Eq("id", 1)).Build()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// DELETE FROM users WHERE (id = ?)
+	// [1]
+}
+
+// Example 30: UPDATE 多字段 + 条件
+func ExampleUpdate_complex() {
+	sql, args := Update("users").
+		Set("name", "Alice").
+		Set("age", 20).
+		Set("email", "alice@new.com").
+		Where(Eq("id", 1)).
+		Where(Gt("version", 0)).
+		Build()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// UPDATE users SET name = ?, age = ?, email = ? WHERE (id = ? AND version > ?)
+	// [Alice 20 alice@new.com 1 0]
+}
