@@ -19,6 +19,10 @@ func (f *ModelField[T]) Set(value T) {
 	f.Value = value
 }
 
+func (f ModelField[T]) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &f.Value)
+}
+
 func (f ModelField[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(f.Value)
 }
