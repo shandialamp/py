@@ -1,6 +1,7 @@
 package py
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 )
@@ -16,6 +17,10 @@ type ModelField[T any] struct {
 // Set 设置字段值
 func (f *ModelField[T]) Set(value T) {
 	f.Value = value
+}
+
+func (f ModelField[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.Value)
 }
 
 // NewModel 初始化模型，自动解析结构体中的 ModelField 字段并填充其 Name 为 db 标签值
