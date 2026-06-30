@@ -233,6 +233,28 @@ py.Table("users").
 // /* Get active users */ SELECT * FROM users WHERE (status = ?)
 ```
 
+## 全局构建回调 OnBuild
+
+通过 `py.OnBuild` 注册全局处理器，每次 `Build()` 成功后自动调用。适用于日志记录、SQL 审计、性能监控等场景。
+
+```go
+// 注册日志处理器
+py.OnBuild(func(sql string, args []any) {
+    log.Printf("[SQL] %s | args: %v", sql, args)
+})
+
+// 注册性能监控处理器
+py.OnBuild(func(sql string, args []any) {
+    // 自定义监控逻辑
+})
+
+// 所有 Build 调用都会触发已注册的处理器
+sql, args := py.Table("users").Where(py.Eq("id", 1)).Build()
+// 日志输出: [SQL] SELECT * FROM users WHERE (id = ?) | args: [1]
+```
+
+处理器按注册顺序依次执行，支持注册多个处理器。
+
 ## INSERT / UPDATE / DELETE
 
 ### INSERT

@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+// OnBuildHandler 构建成功后的回调函数类型
+// sql: 生成的 SQL 语句, args: SQL 参数
+type OnBuildHandler func(sql string, args []any)
+
+// onBuildGlobals 全局构建回调列表
+var onBuildGlobals []OnBuildHandler
+
+// OnBuild 注册一个全局处理器，在每次 Build 成功后调用
+// 可用于日志记录、SQL 审计、性能监控等
+func OnBuild(handler OnBuildHandler) {
+	onBuildGlobals = append(onBuildGlobals, handler)
+}
+
 // QueryBuilder SQL 查询构建器
 type QueryBuilder struct {
 	sqlType    SqlType
@@ -301,19 +314,30 @@ func (q *QueryBuilder) aggregate(fn, column string) (string, []any) {
 // ==================== Build ====================
 
 // Build 生成最终的 SQL 语句和参数
+// 生成成功后，会依次调用所有通过 OnBuild 注册的全局处理器
 func (q *QueryBuilder) Build() (string, []any) {
+	var sql string
+	var args []any
+
 	switch q.sqlType {
 	case SqlTypeSelect:
-		return q.buildSelect()
+		sql, args = q.buildSelect()
 	case SqlTypeInsert:
-		return q.buildInsert()
+		sql, args = q.buildInsert()
 	case SqlTypeUpdate:
-		return q.buildUpdate()
+		sql, args = q.buildUpdate()
 	case SqlTypeDelete:
-		return q.buildDelete()
+		sql, args = q.buildDelete()
 	default:
 		return "", nil
 	}
+
+	// 调用全局 OnBuild 处理器
+	for _, handler := range onBuildGlobals {
+		handler(sql, args)
+	}
+
+	return sql, args
 }
 
 func (q *QueryBuilder) buildSelect() (string, []any) {
