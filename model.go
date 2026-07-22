@@ -80,6 +80,28 @@ func (f *ModelField[T]) Scan(src any) error {
 		return nil
 	}
 
+	// 情况 2.5：值类型转指针类型（如 int64 -> *int64）
+	if targetType.Kind() == reflect.Ptr {
+		elemType := targetType.Elem()
+		
+		// 源类型是否直接兼容或可转换到指向类型
+		if srcValue.Type().AssignableTo(elemType) {
+			// 直接赋值：src -> *elem
+			ptr := reflect.New(elemType)
+			ptr.Elem().Set(srcValue)
+			f._Value = ptr.Interface().(T)
+			return nil
+		}
+		
+		if srcValue.Type().ConvertibleTo(elemType) {
+			// 先转换再创建指针
+			ptr := reflect.New(elemType)
+			ptr.Elem().Set(srcValue.Convert(elemType))
+			f._Value = ptr.Interface().(T)
+			return nil
+		}
+	}
+
 	// 情况 3：特殊处理 []byte 和 string
 	switch v := src.(type) {
 	case []byte:
@@ -103,18 +125,18 @@ func (f *ModelField[T]) Scan(src any) error {
 // 支持 []byte -> string、[]byte -> *string 等指针类型
 func (f *ModelField[T]) scanBytes(b []byte, targetType reflect.Type) error {
 	s := string(b)
-	
+
 	// 情况 1：目标类型是 string
 	if targetType.Kind() == reflect.String {
 		var result any = s
 		f._Value = result.(T)
 		return nil
 	}
-	
+
 	// 情况 2：目标类型是指针
 	if targetType.Kind() == reflect.Ptr {
 		elem := targetType.Elem()
-		
+
 		// 如果指向的是 string
 		if elem.Kind() == reflect.String {
 			result := &s
@@ -122,17 +144,17 @@ func (f *ModelField[T]) scanBytes(b []byte, targetType reflect.Type) error {
 			return nil
 		}
 	}
-	
+
 	// 情况 3：通用反射尝试
 	converted := reflect.New(targetType).Elem()
 	srcValue := reflect.ValueOf(s)
-	
+
 	if srcValue.Type().AssignableTo(targetType) {
 		converted.Set(srcValue)
 		f._Value = converted.Interface().(T)
 		return nil
 	}
-	
+
 	return fmt.Errorf("cannot convert []byte to type %v", targetType)
 }
 
@@ -145,11 +167,11 @@ func (f *ModelField[T]) scanString(s string, targetType reflect.Type) error {
 		f._Value = result.(T)
 		return nil
 	}
-	
+
 	// 情况 2：目标类型是指针
 	if targetType.Kind() == reflect.Ptr {
 		elem := targetType.Elem()
-		
+
 		// 如果指向的是 string
 		if elem.Kind() == reflect.String {
 			result := &s
@@ -157,7 +179,7 @@ func (f *ModelField[T]) scanString(s string, targetType reflect.Type) error {
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("cannot convert string to type %v", targetType)
 }
 
