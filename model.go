@@ -100,36 +100,64 @@ func (f *ModelField[T]) Scan(src any) error {
 }
 
 // scanBytes 处理 []byte -> T 的转换
+// 支持 []byte -> string、[]byte -> *string 等指针类型
 func (f *ModelField[T]) scanBytes(b []byte, targetType reflect.Type) error {
-	// 如果目标类型是 string
-	if targetType.Kind() == reflect.String {
-		var result any = string(b)
-		f._Value = result.(T)
-		return nil
-	}
-
-	// 尝试通过反射赋值
-	converted := reflect.New(targetType).Elem()
-	srcValue := reflect.ValueOf(string(b))
-
-	if srcValue.Type().AssignableTo(targetType) {
-		converted.Set(srcValue)
-		f._Value = converted.Interface().(T)
-		return nil
-	}
-
-	return fmt.Errorf("cannot convert []byte to type %v", targetType)
-}
-
-// scanString 处理 string -> T 的转换
-func (f *ModelField[T]) scanString(s string, targetType reflect.Type) error {
-	// 如果目标类型是 string
+	s := string(b)
+	
+	// 情况 1：目标类型是 string
 	if targetType.Kind() == reflect.String {
 		var result any = s
 		f._Value = result.(T)
 		return nil
 	}
+	
+	// 情况 2：目标类型是指针
+	if targetType.Kind() == reflect.Ptr {
+		elem := targetType.Elem()
+		
+		// 如果指向的是 string
+		if elem.Kind() == reflect.String {
+			result := &s
+			f._Value = any(result).(T)
+			return nil
+		}
+	}
+	
+	// 情况 3：通用反射尝试
+	converted := reflect.New(targetType).Elem()
+	srcValue := reflect.ValueOf(s)
+	
+	if srcValue.Type().AssignableTo(targetType) {
+		converted.Set(srcValue)
+		f._Value = converted.Interface().(T)
+		return nil
+	}
+	
+	return fmt.Errorf("cannot convert []byte to type %v", targetType)
+}
 
+// scanString 处理 string -> T 的转换
+// 支持 string -> string、string -> *string 等指针类型
+func (f *ModelField[T]) scanString(s string, targetType reflect.Type) error {
+	// 情况 1：目标类型是 string
+	if targetType.Kind() == reflect.String {
+		var result any = s
+		f._Value = result.(T)
+		return nil
+	}
+	
+	// 情况 2：目标类型是指针
+	if targetType.Kind() == reflect.Ptr {
+		elem := targetType.Elem()
+		
+		// 如果指向的是 string
+		if elem.Kind() == reflect.String {
+			result := &s
+			f._Value = any(result).(T)
+			return nil
+		}
+	}
+	
 	return fmt.Errorf("cannot convert string to type %v", targetType)
 }
 
