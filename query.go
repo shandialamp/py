@@ -2,6 +2,7 @@ package py
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -146,6 +147,54 @@ func (q *QueryBuilder) Set(col string, val any) *QueryBuilder {
 		q.insertCols = append(q.insertCols, col)
 	}
 	q.setCols = append(q.setCols, setPair{col: col, val: val})
+	return q
+}
+
+// SetStruct 通过结构体批量设置字段值
+// 结构体中的 ModelField 字段必须标注 db 标签，SetStruct 会自动读取 Name 和 Value
+//
+//	user := py.NewModel[User]()
+//	user.Name.Set("Alice")
+//	user.Age.Set(18)
+//
+//	py.Insert("users").SetStruct(user).Build()
+//	// INSERT INTO users (name, age) VALUES (?, ?)  -- "Alice", 18
+//
+//	py.Update("users").SetStruct(user).Where(py.Eq("id", 1)).Build()
+//	// UPDATE users SET name = ?, age = ? WHERE (id = ?)  -- "Alice", 18, 1
+func (q *QueryBuilder) SetStruct(m any) *QueryBuilder {
+	v := reflect.ValueOf(m)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return q
+	}
+
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		ft := t.Field(i)
+
+		// 只处理 ModelField 类型的字段
+		if !strings.HasPrefix(f.Type().Name(), "ModelField") {
+			continue
+		}
+
+		col := ft.Tag.Get("db")
+		if col == "" {
+			continue
+		}
+
+		// 获取 Value 字段
+		valField := f.FieldByName("Value")
+		if !valField.IsValid() {
+			continue
+		}
+
+		q.Set(col, valField.Interface())
+	}
+
 	return q
 }
 

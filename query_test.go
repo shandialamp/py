@@ -308,3 +308,70 @@ func TestWhenExample(t *testing.T) {
 	fmt.Printf("Args: %v\n", args)
 	assertSQL(t, "SELECT COUNT(*) FROM users WHERE (a = ?)", []any{1}, sql, args)
 }
+
+// ==================== SetStruct 测试 ====================
+
+type testUserModel struct {
+	Id     ModelField[int64]  `db:"id"`
+	Name   ModelField[string] `db:"name"`
+	Age    ModelField[int]    `db:"age"`
+	Email  ModelField[string] `db:"email"`
+	Status ModelField[int]    `db:"status"`
+}
+
+func TestSetStructInsert(t *testing.T) {
+	user := NewModel[testUserModel]()
+	user.Name.Set("Alice")
+	user.Age.Set(18)
+	user.Email.Set("alice@test.com")
+	user.Status.Set(1)
+
+	sql, args := Insert("users").SetStruct(user).Build()
+	assertSQL(t, "INSERT INTO users (id, name, age, email, status) VALUES (?, ?, ?, ?, ?)",
+		[]any{int64(0), "Alice", 18, "alice@test.com", 1}, sql, args)
+}
+
+func TestSetStructUpdate(t *testing.T) {
+	user := NewModel[testUserModel]()
+	user.Name.Set("Bob")
+	user.Age.Set(25)
+	user.Status.Set(1)
+
+	sql, args := Update("users").SetStruct(user).Where(Eq("id", 1)).Build()
+	assertSQL(t, "UPDATE users SET id = ?, name = ?, age = ?, email = ?, status = ? WHERE (id = ?)",
+		[]any{int64(0), "Bob", 25, "", 1, 1}, sql, args)
+}
+
+func TestSetStructWithSet(t *testing.T) {
+	// SetStruct 和 Set 混合使用
+	user := NewModel[testUserModel]()
+	user.Name.Set("Charlie")
+
+	sql, args := Update("users").
+		SetStruct(user).
+		Set("updated_at", "2024-01-01").
+		Where(Eq("id", 1)).
+		Build()
+	assertSQL(t, "UPDATE users SET id = ?, name = ?, age = ?, email = ?, status = ?, updated_at = ? WHERE (id = ?)",
+		[]any{int64(0), "Charlie", 0, "", 0, "2024-01-01", 1}, sql, args)
+}
+
+func TestSetStructPtr(t *testing.T) {
+	// 传入指针
+	user := NewModel[testUserModel]()
+	user.Name.Set("Dave")
+
+	sql, args := Insert("users").SetStruct(user).Build()
+	assertSQL(t, "INSERT INTO users (id, name, age, email, status) VALUES (?, ?, ?, ?, ?)",
+		[]any{int64(0), "Dave", 0, "", 0}, sql, args)
+}
+
+func TestSetStructAllFields(t *testing.T) {
+	// SetStruct 会设置所有 ModelField 字段（包括零值），这是预期行为
+	user := NewModel[testUserModel]()
+	user.Name.Set("Eve")
+
+	sql, args := Insert("users").SetStruct(user).Build()
+	assertSQL(t, "INSERT INTO users (id, name, age, email, status) VALUES (?, ?, ?, ?, ?)",
+		[]any{int64(0), "Eve", 0, "", 0}, sql, args)
+}
