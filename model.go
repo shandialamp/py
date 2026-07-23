@@ -83,7 +83,7 @@ func (f *ModelField[T]) Scan(src any) error {
 	// 情况 2.5：值类型转指针类型（如 int64 -> *int64）
 	if targetType.Kind() == reflect.Ptr {
 		elemType := targetType.Elem()
-		
+
 		// 源类型是否直接兼容或可转换到指向类型
 		if srcValue.Type().AssignableTo(elemType) {
 			// 直接赋值：src -> *elem
@@ -92,7 +92,7 @@ func (f *ModelField[T]) Scan(src any) error {
 			f._Value = ptr.Interface().(T)
 			return nil
 		}
-		
+
 		if srcValue.Type().ConvertibleTo(elemType) {
 			// 先转换再创建指针
 			ptr := reflect.New(elemType)
@@ -271,4 +271,68 @@ func isModelField(fieldType reflect.Type) bool {
 //	py.TableField("users", "id") // "users.id"
 func TableField(table, field string) string {
 	return table + "." + field
+}
+
+// ModelColumns 获取模型中定义的所有 db 标签列名（以逗号分隔）
+// 用于生成 SELECT 语句，避免 SELECT * 导致的字段不匹配问题
+//
+// 用法:
+//
+//	query := fmt.Sprintf("SELECT %s FROM table WHERE id = ?", py.ModelColumns[Goods]())
+//	// 输出: SELECT id, name, price FROM table WHERE id = ?
+func ModelColumns[M any]() string {
+	var m M
+	v := reflect.ValueOf(&m).Elem()
+	t := v.Type()
+
+	var columns []string
+
+	for i := 0; i < v.NumField(); i++ {
+		fieldType := t.Field(i)
+
+		// 判断是否是 ModelField 类型
+		if !isModelField(fieldType.Type) {
+			continue
+		}
+
+		// 获取 db 标签
+		column := fieldType.Tag.Get("db")
+		if column != "" {
+			columns = append(columns, column)
+		}
+	}
+
+	return strings.Join(columns, ", ")
+}
+
+// ModelColumnsWithTable 获取模型中定义的所有 db 标签列名，带表名前缀（以逗号分隔）
+// 用于 JOIN 查询等需要限定列名的场景
+//
+// 用法:
+//
+//	query := fmt.Sprintf("SELECT %s FROM goods WHERE id = ?", py.ModelColumnsWithTable[Goods]("goods"))
+//	// 输出: SELECT goods.id, goods.name, goods.price FROM goods WHERE id = ?
+func ModelColumnsWithTable[M any](table string) string {
+	var m M
+	v := reflect.ValueOf(&m).Elem()
+	t := v.Type()
+
+	var columns []string
+
+	for i := 0; i < v.NumField(); i++ {
+		fieldType := t.Field(i)
+
+		// 判断是否是 ModelField 类型
+		if !isModelField(fieldType.Type) {
+			continue
+		}
+
+		// 获取 db 标签
+		column := fieldType.Tag.Get("db")
+		if column != "" {
+			columns = append(columns, table+"."+column)
+		}
+	}
+
+	return strings.Join(columns, ", ")
 }
